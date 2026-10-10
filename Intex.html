@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Texas 5A &amp; 6A Football Predictor</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --text: #f8fafc;
+    --muted: #94a3b8;
+    --primary: #2563eb;
+    --accent: #38bdf8;
+    --border: #334155;
+    --win: #22c55e;
+  }
+  [data-theme="light"] {
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --text: #0f172a;
+    --muted: #64748b;
+    --primary: #2563eb;
+    --accent: #0284c7;
+    --border: #e2e8f0;
+    --win: #16a34a;
+  }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { font-size: 1.25rem; font-weight: 700; color: var(--accent); }
+  .btn {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn:hover { opacity: 0.9; }
+  .container { max-width: 900px; margin: 1.5rem auto; padding: 0 1rem; }
+  .game-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .team-btn {
+    flex: 1;
+    padding: 0.75rem;
+    margin: 0 0.5rem;
+    background: var(--bg);
+    border: 2px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: center;
+    font-weight: 600;
+  }
+  .team-btn.picked {
+    border-color: var(--win);
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--win);
+  }
+  .vs { font-weight: 700; color: var(--muted); }
+  .factors { font-size: 0.8rem; color: var(--muted); margin-top: 0.5rem; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">Texas 5A &amp; 6A Football Predictor</div>
+  <div>
+    <button class="btn" id="autoBtn">Auto-pick</button>
+    <button class="btn ghost" id="resetBtn">Reset</button>
+    <button class="btn ghost" id="themeBtn">Theme</button>
+  </div>
+</header>
+
+<div class="container">
+  <h2>Featured Matchups &amp; Rivalries</h2>
+  <div id="gamesList"></div>
+</div>
+
+<script>
+// Database of Texas teams, ratings, recent records, and rivalry histories
+const teamsData = {
+  "pflugerville": { name: "Pflugerville Panthers", rating: 78, last3SeasonsWinPct: 0.65, currentWinPct: 0.70 },
+  "hendrickson": { name: "Pflugerville Hendrickson", rating: 74, last3SeasonsWinPct: 0.58, currentWinPct: 0.60 },
+  "hays": { name: "Buda Hays Hawks", rating: 80, last3SeasonsWinPct: 0.68, currentWinPct: 0.75 },
+  "san_marcos": { name: "San Marcos Rattlers", rating: 75, last3SeasonsWinPct: 0.52, currentWinPct: 0.50 }
+};
+
+const games = [
+  {
+    id: 1,
+    teamA: teamsData.pflugerville,
+    teamB: teamsData.hendrickson,
+    h2h: { pflugerville: 12, hendrickson: 10 },
+    userPick: null
+  },
+  {
+    id: 2,
+    teamA: teamsData.hays,
+    teamB: teamsData.san_marcos,
+    h2h: { hays: 49, san_marcos: 45 }, // Hays leads rivalry 49-45 (+5% bonus to Hays)
+    userPick: null
+  }
+];
+
+// 4-Factor Win Probability Engine
+function calculateWinProbability(teamA, teamB, h2hHistory) {
+  let probA = 50;
+  let probB = 50;
+
+  // Factor 1: Media / State Ranking consensus
+  const ratingDiff = teamA.rating - teamB.rating;
+  probA += ratingDiff * 0.25;
+  probB -= ratingDiff * 0.25;
+
+  // Factor 2: 3-Season Recent Track Record
+  const recentDiff = teamA.last3SeasonsWinPct - teamB.last3SeasonsWinPct;
+  probA += recentDiff * 15;
+  probB -= recentDiff * 15;
+
+  // Factor 3: Current Season Record (+5% bonus)
+  if (teamA.currentWinPct > teamB.currentWinPct) {
+    probA += 5; probB -= 5;
+  } else if (teamB.currentWinPct > teamA.currentWinPct) {
+    probB += 5; probA -= 5;
+  }
+
+  // Factor 4: Head-to-Head Rivalry Leader (+5% bonus)
+  const winsA = h2hHistory[Object.keys(teamsData).find(k => teamsData[k].name === teamA.name)] || 0;
+  const winsB = h2hHistory[Object.keys(teamsData).find(k => teamsData[k].name === teamB.name)] || 0;
+  if (winsA > winsB) {
+    probA += 5; probB -= 5;
+  } else if (winsB > winsA) {
+    probB += 5; probA -= 5;
+  }
+
+  probA = Math.max(5, Math.min(95, Math.round(probA)));
+  return { probA, probB: 100 - probA };
+}
+
+function renderGames() {
+  const container = document.getElementById("gamesList");
+  container.innerHTML = "";
+  games.forEach(game => {
+    const { probA, probB } = calculateWinProbability(game.teamA, game.teamB, game.h2h);
+    const card = document.createElement("div");
+    card.className = "game-card";
+    card.innerHTML = `
+      <button class="team-btn ${game.userPick === game.teamA.name ? 'picked' : ''}" onclick="pickTeam(${game.id}, '${game.teamA.name}')">
+        ${game.teamA.name} (${probA}%)
+      </button>
+      <span class="vs">VS</span>
+      <button class="team-btn ${game.userPick === game.teamB.name ? 'picked' : ''}" onclick="pickTeam(${game.id}, '${game.teamB.name}')">
+        ${game.teamB.name} (${probB}%)
+      </button>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function pickTeam(gameId, teamName) {
+  const game = games.find(g => g.id === gameId);
+  if (game) {
+    game.userPick = teamName;
+    renderGames();
+  }
+}
+
+document.getElementById("autoBtn").addEventListener("click", () => {
+  games.forEach(game => {
+    const { probA, probB } = calculateWinProbability(game.teamA, game.teamB, game.h2h);
+    game.userPick = probA >= probB ? game.teamA.name : game.teamB.name;
+  });
+  renderGames();
+});
+
+document.getElementById("resetBtn").addEventListener("click", () => {
+  games.forEach(game => game.userPick = null);
+  renderGames();
+});
+
+document.getElementById("themeBtn").addEventListener("click", () => {
+  const html = document.documentElement;
+  html.setAttribute("data-theme", html.getAttribute("data-theme") === "dark" ? "light" : "dark");
+});
+
+renderGames();
+</script>
+</body>
+</html>
