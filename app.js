@@ -149,7 +149,7 @@ function filterRender(){
 function render(){shown=PAGE;showEarlier=false;filterRender();renderMain();progress()}
 function renderMain(){
   const main=$('#main');
-  if(view==='games')renderGames(main);else if(view==='standings')renderStandings(main);else renderPlayoffs(main);
+  if(view==='games')renderGames(main);else if(view==='standings')renderStandings(main);else buildPlayoffBracket("6A_D1");:
 }
 function dot(t){return '<i class="dot" style="background:linear-gradient(135deg,'+t.c1+' 50%,'+(t.c2||t.c1)+' 50%)" aria-hidden="true"></i>'}
 function side(g,id,home){
