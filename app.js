@@ -350,3 +350,69 @@ function calculateGameOdds(teamA, teamB, rivalryData = {}) {
 
   return { probA, probB };
 }
+/**
+ * Generates the Official Texas UIL Playoff Bracket
+ * Seeds top 4 from each district and sets up Bi-District pairings.
+ */
+function buildPlayoffBracket(classification = "6A_D1") {
+  const container = document.getElementById("main");
+  if (!container) return;
+
+  // Filter districts and get top 4 qualifiers from regular season standings
+  const districts = getDistrictStandings(classification);
+  const bracketRounds = [
+    "Bi-District",
+    "Area",
+    "Regional Semifinal",
+    "Regional Final",
+    "State Semifinal",
+    "State Championship"
+  ];
+
+  let bracketHTML = `
+    <div class="bracket-controls">
+      <div class="seg" role="group">
+        <button class="seg-btn ${classification === '6A_D1' ? 'active' : ''}" onclick="buildPlayoffBracket('6A_D1')">6A Division I</button>
+        <button class="seg-btn ${classification === '6A_D2' ? 'active' : ''}" onclick="buildPlayoffBracket('6A_D2')">6A Division II</button>
+        <button class="seg-btn ${classification === '5A_D1' ? 'active' : ''}" onclick="buildPlayoffBracket('5A_D1')">5A Division I</button>
+        <button class="seg-btn ${classification === '5A_D2' ? 'active' : ''}" onclick="buildPlayoffBracket('5A_D2')">5A Division II</button>
+      </div>
+    </div>
+    <div class="bracket-tree-wrapper">
+      <div class="bracket-grid">
+  `;
+
+  // Pair partner districts: D1 vs D2, D3 vs D4, etc.
+  for (let d = 0; d < districts.length; d += 2) {
+    const distA = districts[d];
+    const distB = districts[d + 1];
+    if (!distA || !distB) continue;
+
+    const matchups = [
+      { top: distA.teams[0], bottom: distB.teams[3] }, // #1 vs #4
+      { top: distA.teams[1], bottom: distB.teams[2] }, // #2 vs #3
+      { top: distB.teams[0], bottom: distA.teams[3] }, // #1 vs #4
+      { top: distB.teams[1], bottom: distA.teams[2] }  // #2 vs #3
+    ];
+
+    bracketHTML += `<div class="region-pod">`;
+    matchups.forEach((m, idx) => {
+      const topName = m.top ? m.top.name : "TBD";
+      const botName = m.bottom ? m.bottom.name : "TBD";
+      bracketHTML += `
+        <div class="bracket-matchup">
+          <div class="bracket-team" onclick="pickPlayoffWinner(this)">${topName}</div>
+          <div class="bracket-team" onclick="pickPlayoffWinner(this)">${botName}</div>
+        </div>
+      `;
+    });
+    bracketHTML += `</div>`;
+  }
+
+  bracketHTML += `
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = bracketHTML;
+}
