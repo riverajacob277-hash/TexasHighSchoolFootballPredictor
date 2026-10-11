@@ -297,3 +297,56 @@ $('#asOf').textContent=date(D.asOf,{month:'long',day:'numeric',year:'numeric'});
 $('.brand').onclick=e=>{e.preventDefault();area='all';cls='all';district='all';school='all';week=NEXT;view='games';tabRender();render();window.scrollTo({top:0,behavior:'smooth'})};
 render();
 window.predictor={T,G,picks,scores,scoreDrafts,chances,standings:()=>standings,rankings:()=>rankings,pickGames,encode,decode,compute,ranked};
+/**
+ * 4-Factor Prediction & Auto-Pick Engine
+ * 1. Media Consensus & Power Ratings
+ * 2. 3-Season Recent Performance Index
+ * 3. Current Season Record (+5% bonus)
+ * 4. Head-to-Head Rivalry Series Leader (+5% bonus)
+ */
+function calculateGameOdds(teamA, teamB, rivalryData = {}) {
+  let probA = 50;
+  let probB = 50;
+
+  // Factor 1: Media / State Ranking consensus
+  const ratingA = teamA.rating || teamA.powerRating || 50;
+  const ratingB = teamB.rating || teamB.powerRating || 50;
+  const ratingDiff = ratingA - ratingB;
+  probA += ratingDiff * 0.25;
+  probB -= ratingDiff * 0.25;
+
+  // Factor 2: 3-Season Recent History
+  const recentA = teamA.last3SeasonsWinPct || 0.50;
+  const recentB = teamB.last3SeasonsWinPct || 0.50;
+  const recentDiff = recentA - recentB;
+  probA += recentDiff * 15;
+  probB -= recentDiff * 15;
+
+  // Factor 3: Current Season Record (+5% bonus to better record)
+  const currentA = teamA.currentWinPct || (teamA.wins ? teamA.wins / (teamA.wins + teamA.losses) : 0.50);
+  const currentB = teamB.currentWinPct || (teamB.wins ? teamB.wins / (teamB.wins + teamB.losses) : 0.50);
+  if (currentA > currentB) {
+    probA += 5;
+    probB -= 5;
+  } else if (currentB > currentA) {
+    probB += 5;
+    probA -= 5;
+  }
+
+  // Factor 4: Head-to-Head Rivalry Leader (+5% bonus)
+  const seriesWinsA = rivalryData[teamA.id || teamA.name] || 0;
+  const seriesWinsB = rivalryData[teamB.id || teamB.name] || 0;
+  if (seriesWinsA > seriesWinsB) {
+    probA += 5;
+    probB -= 5;
+  } else if (seriesWinsB > seriesWinsA) {
+    probB += 5;
+    probA -= 5;
+  }
+
+  // Keep probabilities within realistic bounds (5% to 95%)
+  probA = Math.max(5, Math.min(95, Math.round(probA)));
+  probB = 100 - probA;
+
+  return { probA, probB };
+}
