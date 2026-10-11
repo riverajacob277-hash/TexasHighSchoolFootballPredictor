@@ -149,7 +149,7 @@ function filterRender(){
 function render(){shown=PAGE;showEarlier=false;filterRender();renderMain();progress()}
 function renderMain(){
   const main=$('#main');
-  if(view==='games')renderGames(main);else if(view==='standings')renderStandings(main);else buildPlayoffBracket("6A_D1");:
+  if(view==='games')renderGames(main);else if(view==='standings')renderStandings(main);else buildPlayoffBracket(main);:
 }
 function dot(t){return '<i class="dot" style="background:linear-gradient(135deg,'+t.c1+' 50%,'+(t.c2||t.c1)+' 50%)" aria-hidden="true"></i>'}
 function side(g,id,home){
@@ -415,4 +415,76 @@ function buildPlayoffBracket(classification = "6A_D1") {
   `;
 
   container.innerHTML = bracketHTML;
+}
+// ==========================================
+// Texas UIL Playoff Tournament Predictor
+// ==========================================
+let currentPlayoffRound = 1;
+let playoffPicks = {};
+
+function buildPlayoffBracket(targetDiv) {
+  const container = targetDiv || document.getElementById("main");
+  if (!container) return;
+
+  const rounds = [
+    { num: 1, name: "Bi-District (Round 1)" },
+    { num: 2, name: "Area (Round 2)" },
+    { num: 3, name: "Regional Semifinals" },
+    { num: 4, name: "Regional Finals" },
+    { num: 5, name: "State Semifinals" },
+    { num: 6, name: "State Championship" }
+  ];
+
+  let html = `
+    <div class="playoff-header" style="text-align: center; margin-bottom: 1.5rem;">
+      <h2>Texas 5A & 6A State Tournament Bracket</h2>
+      <p style="color: var(--muted);">Click any team to pick them to advance to the next round.</p>
+      <div class="seg" style="display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem;">
+  `;
+
+  rounds.forEach(r => {
+    html += `<button class="btn ${currentPlayoffRound === r.num ? '' : 'ghost'}" onclick="setPlayoffRound(${r.num})">${r.name}</button>`;
+  });
+
+  html += `
+      </div>
+    </div>
+    <div id="playoffMatchupsList" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; max-width: 1100px; margin: 0 auto;">
+  `;
+
+  // Generate official UIL Bi-District pairings (D1 vs D2, D3 vs D4, etc.)
+  for (let d = 1; d <= 32; d += 2) {
+    const gameId = `round_${currentPlayoffRound}_pair_${d}`;
+    const teamA = `District ${d} Seed #1`;
+    const teamB = `District ${d+1} Seed #4`;
+    const picked = playoffPicks[gameId];
+
+    html += `
+      <div class="game-card" style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem;">
+        <div style="font-size: 0.8rem; color: var(--muted); margin-bottom: 0.5rem;">Region Pod • Districts ${d} & ${d+1}</div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <button class="team-btn ${picked === teamA ? 'picked' : ''}" style="flex: 1; padding: 0.75rem; background: var(--bg); border: 2px solid ${picked === teamA ? 'var(--win)' : 'var(--border)'}; color: var(--text); border-radius: 6px; cursor: pointer; font-weight: 600;" onclick="selectPlayoffWinner('${gameId}', '${teamA}')">
+            ${teamA}
+          </button>
+          <span style="font-weight: 700; color: var(--muted);">VS</span>
+          <button class="team-btn ${picked === teamB ? 'picked' : ''}" style="flex: 1; padding: 0.75rem; background: var(--bg); border: 2px solid ${picked === teamB ? 'var(--win)' : 'var(--border)'}; color: var(--text); border-radius: 6px; cursor: pointer; font-weight: 600;" onclick="selectPlayoffWinner('${gameId}', '${teamB}')">
+            ${teamB}
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+function setPlayoffRound(roundNum) {
+  currentPlayoffRound = roundNum;
+  buildPlayoffBracket();
+}
+
+function selectPlayoffWinner(gameId, teamName) {
+  playoffPicks[gameId] = teamName;
+  buildPlayoffBracket();
 }
