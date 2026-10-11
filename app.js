@@ -11,7 +11,8 @@ const local=t=>!!t;
 const inArea=t=>area==='all'||(area==='i35'?t.a!=='T':t.r===area);
 const allowed=g=>true;
 const pickGames=G.filter(g=>!g.final&&allowed(g));
-const picks={},scores={},scoreDrafts={};
+const picks={},scores={},scoreDrafts={},playoffPicks={};
+let currentPlayoffRound=1,playoffClass='6A';
 const wkOf=d=>Math.max(1,Math.min(11,Math.floor((Date.parse(d+'T12:00:00Z')-Date.parse('2026-08-27T12:00:00Z'))/604800000)+1));
 const NOW=wkOf(D.asOf),NEXT=Math.min(11,NOW+1);
 const PAGE=240;let shown=PAGE,showEarlier=false;let area='all',cls='all',district='all',school='all',hideOutside=true,view='games',week=NEXT,theme='dark';
@@ -82,13 +83,24 @@ function status(k){
 function stTag(v,done){return v==='in'?'<span class="st x">'+(done?'In':'Clinched')+'</span>':v==='out'?'<span class="st e">'+(done?'Out':'Eliminated')+'</span>':''}
 function recalc(){standings=compute(true);rankings=Object.fromEntries(districts.map(k=>[k,ranked(standings,k)]))}
 baseStandings=compute(false);baseRanks=Object.fromEntries(districts.map(k=>[k,ranked(baseStandings,k)]));recalc();
-function strength(g){return 1/(1+10**((ratings[g.a]-ratings[g.h]-(g.nu?0:35))/400))}
+
+function strength(g){
+  let p = 1/(1+10**((ratings[g.a]-ratings[g.h]-(g.nu?0:35))/400));
+  // Current season record bonus (+5% to team with better record)
+  const stH = standings[g.h], stA = standings[g.a];
+  if(stH && stA){
+    const pctH = pct(stH.r), pctA = pct(stA.r);
+    if(pctH > pctA) p = Math.min(0.95, p + 0.05);
+    else if(pctA > pctH) p = Math.max(0.05, p - 0.05);
+  }
+  return p;
+}
 function chances(g){const h=Math.round(strength(g)*100);return {h,a:100-h}}
 function replaceState(target,next){for(const id of Object.keys(target))delete target[id];Object.assign(target,next)}
-function remember(){undo={picks:{...picks},scores:structuredClone(scores),drafts:structuredClone(scoreDrafts)}}
+function remember(){undo={picks:{...picks},scores:structuredClone(scores),drafts:structuredClone(scoreDrafts),playoffPicks:{...playoffPicks}}}
 function toast(msg,canUndo=false){
   clearTimeout(toastTimer);const e=$('#toast');e.hidden=false;e.innerHTML='<span>'+esc(msg)+'</span>'+(canUndo?'<button type="button" id="undoBtn">Undo</button>':'');
-  if(canUndo)$('#undoBtn').onclick=()=>{replaceState(picks,undo?.picks||{});replaceState(scores,undo?.scores||{});replaceState(scoreDrafts,undo?.drafts||{});recalc();render();toast('Previous predictions restored')};
+  if(canUndo)$('#undoBtn').onclick=()=>{replaceState(picks,undo?.picks||{});replaceState(scores,undo?.scores||{});replaceState(scoreDrafts,undo?.drafts||{});replaceState(playoffPicks,undo?.playoffPicks||{});recalc();render();toast('Previous predictions restored')};
   toastTimer=setTimeout(()=>e.hidden=true,5000);
 }
 function updateHead(){
@@ -238,18 +250,86 @@ function pcard(k){
   });
   return out+'</section>';
 }
+
 function renderPlayoffs(el){
   const ks=relevantDistricts();let inNow=0,added=0,dropped=0;
   for(const k of ks){const a=rankings[k].slice(0,4),b=baseRanks[k].slice(0,4);inNow+=a.length;added+=a.filter(id=>!b.includes(id)).length;dropped+=b.filter(id=>!a.includes(id)).length}
-  let out='<div class="head-row"><div><h1 class="page-title">Playoff picture</h1><p class="page-sub">Projected district qualifiers, based on the games you’ve picked so far.</p></div></div><div class="summary"><div class="stat"><b>'+inNow+'</b><span>Teams in a top-four spot</span></div><div class="stat"><b class="pos">'+added+'</b><span>Moved into a playoff spot</span></div><div class="stat"><b>'+dropped+'</b><span>Moved out of a playoff spot</span></div></div><p class="muted" style="font-size:var(--text-xs);margin:0 0 var(--s5)">Top four qualify. The next two are shown below the dashed line. This is a qualifier view, not a seeded statewide bracket. 6A qualifiers split into Division I / II by enrollment; that split is not implemented yet. Unresolved district ties remain provisional.</p>';
-  for(const c of ['6A','5A D1','5A D2']){
-    const kk=ks.filter(k=>k.startsWith(c+'|'));if(!kk.length)continue;
-    out+='<section class="grp"><h2>'+c+' <small>'+kk.length+' districts</small></h2><div class="pgrid">'+kk.map(pcard).join('')+'</div></section>';
+  
+  const roundNames = ["Bi-District (Round 1)", "Area (Round 2)", "Regional Semifinals", "Regional Finals", "State Semifinals", "State Championship"];
+
+  let out='<div class="head-row"><div><h1 class="page-title">Playoff Tournament Bracket</h1><p class="page-sub">Interactive Texas UIL Bracket seeded dynamically from your regular season picks.</p></div></div>';
+  out+='<div class="summary"><div class="stat"><b>'+inNow+'</b><span>Teams in a top-four spot</span></div><div class="stat"><b class="pos">'+added+'</b><span>Moved into a playoff spot</span></div><div class="stat"><b>'+dropped+'</b><span>Moved out of a playoff spot</span></div></div>';
+  
+  // Classification Filter
+  out+='<div style="display:flex;justify-content:center;gap:0.5rem;margin:1.5rem 0;flex-wrap:wrap;">';
+  CLS.forEach(c => {
+    out+='<button type="button" class="btn '+(playoffClass===c?'':'ghost')+'" data-pclass="'+c+'">'+c+'</button>';
+  });
+  out+='</div>';
+
+  // Round Selector
+  out+='<nav class="weeks" aria-label="Select playoff round" style="margin-bottom:1.5rem;">';
+  roundNames.forEach((rName, idx) => {
+    const rNum = idx + 1;
+    out+='<button type="button" class="wk '+(currentPlayoffRound===rNum?'now':'')+'" data-pround="'+rNum+'" aria-pressed="'+(currentPlayoffRound===rNum)+'"><b>Round '+rNum+'</b><span>'+rName.split(' ')[0]+'</span></button>';
+  });
+  out+='</nav>';
+
+  // Generate Matchups for Selected Class
+  const classDistricts = districts.filter(k=>k.startsWith(playoffClass+'|'));
+  out+='<div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;">';
+
+  for(let d=0; d<classDistricts.length; d+=2){
+    const distA = classDistricts[d], distB = classDistricts[d+1];
+    if(!distA || !distB) continue;
+    const rA = rankings[distA] || [], rB = rankings[distB] || [];
+    
+    const matchups = [
+      { idA: rA[0], idB: rB[3], seedA: "D"+distA.split('|')[1]+" #1", seedB: "D"+distB.split('|')[1]+" #4" },
+      { idA: rA[1], idB: rB[2], seedA: "D"+distA.split('|')[1]+" #2", seedB: "D"+distB.split('|')[1]+" #3" },
+      { idA: rB[0], idA2: rA[3], idB: rA[3], seedA: "D"+distB.split('|')[1]+" #1", seedB: "D"+distA.split('|')[1]+" #4" },
+      { idA: rB[1], idB: rA[2], seedA: "D"+distB.split('|')[1]+" #2", seedB: "D"+distA.split('|')[1]+" #3" }
+    ];
+
+    matchups.forEach((m, mIdx) => {
+      const gId = 'po_'+playoffClass+'_r'+currentPlayoffRound+'_'+d+'_'+mIdx;
+      const tA = m.idA ? T[m.idA] : null;
+      const tB = m.idB ? T[m.idB] : null;
+      const nameA = tA ? tA.n : m.seedA;
+      const nameB = tB ? tB.n : m.seedB;
+      const picked = playoffPicks[gId];
+
+      out+='<article class="game" style="padding:1rem;background:var(--card);border:1px solid var(--border);border-radius:8px;">';
+      out+='<div class="g-meta" style="font-size:0.8rem;color:var(--muted);margin-bottom:0.5rem;"><span>'+dk(distA)+' vs '+dk(distB)+'</span><span>'+m.seedA+' vs '+m.seedB+'</span></div>';
+      out+='<div style="display:flex;gap:0.5rem;align-items:center;">';
+      out+='<button type="button" class="side '+(picked===nameA?'pick':'')+'" style="flex:1;padding:0.75rem;cursor:pointer;border-radius:6px;border:2px solid '+(picked===nameA?'var(--win)':'var(--border)')+';" data-popick="'+gId+'" data-powho="'+esc(nameA)+'">'+(tA?dot(tA):'')+'<b>'+esc(nameA)+'</b></button>';
+      out+='<span style="font-weight:700;color:var(--muted);">VS</span>';
+      out+='<button type="button" class="side '+(picked===nameB?'pick':'')+'" style="flex:1;padding:0.75rem;cursor:pointer;border-radius:6px;border:2px solid '+(picked===nameB?'var(--win)':'var(--border)')+';" data-popick="'+gId+'" data-powho="'+esc(nameB)+'">'+(tB?dot(tB):'')+'<b>'+esc(nameB)+'</b></button>';
+      out+='</div></article>';
+    });
   }
-  el.innerHTML=out;el.onclick=e=>{const b=e.target.closest('[data-school]');if(b)schoolJump(b.dataset.school)};
+
+  out+='</div>';
+  el.innerHTML=out;
+
+  el.onclick=e=>{
+    const pbtn=e.target.closest('[data-popick]'), rbtn=e.target.closest('[data-pround]'), cbtn=e.target.closest('[data-pclass]');
+    if(pbtn){
+      const gId=pbtn.dataset.popick, who=pbtn.dataset.powho;
+      playoffPicks[gId]=playoffPicks[gId]===who?null:who;
+      renderPlayoffs(el);
+    } else if(rbtn){
+      currentPlayoffRound=Number(rbtn.dataset.pround);
+      renderPlayoffs(el);
+    } else if(cbtn){
+      playoffClass=cbtn.dataset.pclass;
+      renderPlayoffs(el);
+    }
+  };
 }
+
 function tabRender(){for(const b of $('#tabs').children)b.setAttribute('aria-selected',String(b.dataset.view===view))}
-// TX2 codes include winner picks and saved scores; legacy I35 codes still load.
+
 const signature=(()=>{let n=0;for(const c of pickGames.map(g=>g.i).join(''))n=(n*31+c.charCodeAt(0))>>>0;return n.toString(36)})();
 const pack64=str=>btoa(str).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 const unpack64=str=>{if(!/^[A-Za-z0-9_-]+$/.test(str))throw Error('Invalid code format.');return atob(str.replace(/-/g,'+').replace(/_/g,'/'))};
@@ -289,7 +369,7 @@ $('#autoMenu').onclick=e=>{
 };
 document.addEventListener('click',e=>{if(!e.target.closest('#autoMenu')&&!e.target.closest('#autoBtn')){$('#autoMenu').hidden=true;$('#autoBtn').setAttribute('aria-expanded','false')}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('#autoMenu').hidden=true;$('#autoBtn').setAttribute('aria-expanded','false')}});
-$('#resetBtn').onclick=()=>{const n=Object.keys(picks).length;if(!n&&!Object.keys(scores).length&&!Object.keys(scoreDrafts).length){toast('There are no predictions to reset.');return}remember();replaceState(picks,{});replaceState(scores,{});replaceState(scoreDrafts,{});recalc();render();toast('Winner and score predictions cleared',true)};
+$('#resetBtn').onclick=()=>{const n=Object.keys(picks).length;if(!n&&!Object.keys(scores).length&&!Object.keys(scoreDrafts).length){toast('There are no predictions to reset.');return}remember();replaceState(picks,{});replaceState(scores,{});replaceState(scoreDrafts,{});replaceState(playoffPicks,{});recalc();render();toast('Winner and score predictions cleared',true)};
 $('#shareBtn').onclick=()=>{$('#codeOut').value=encode();$('#codeIn').value='';$('#copyMsg').textContent='';$('#loadMsg').textContent='';$('#shareDlg').showModal()};
 $('#copyBtn').onclick=async()=>{try{await navigator.clipboard.writeText($('#codeOut').value);$('#copyMsg').textContent='Copied.'}catch{$('#codeOut').focus();$('#codeOut').select();$('#copyMsg').textContent='Selected — press Ctrl+C or ⌘C to copy.'}};
 $('#loadBtn').onclick=()=>{try{const next=decode($('#codeIn').value);remember();replaceState(picks,next.picks);replaceState(scores,next.scores);replaceState(scoreDrafts,{});recalc();render();$('#shareDlg').close();toast(Object.keys(next.picks).length+' winners and '+Object.keys(next.scores).length+' scores loaded',true)}catch(e){$('#loadMsg').textContent=e.message||'Could not read that code.'}};
