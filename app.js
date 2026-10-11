@@ -84,18 +84,27 @@ function stTag(v,done){return v==='in'?'<span class="st x">'+(done?'In':'Clinche
 function recalc(){standings=compute(true);rankings=Object.fromEntries(districts.map(k=>[k,ranked(standings,k)]))}
 baseStandings=compute(false);baseRanks=Object.fromEntries(districts.map(k=>[k,ranked(baseStandings,k)]));recalc();
 
-function strength(g){
-  let p = 1/(1+10**((ratings[g.a]-ratings[g.h]-(g.nu?0:35))/400));
-  // Current season record bonus (+5% to team with better record)
+function strength(g) {
+  let p = 1 / (1 + 10 ** ((ratings[g.a] - ratings[g.h] - (g.nu ? 0 : 35)) / 400));
   const stH = standings[g.h], stA = standings[g.a];
-  if(stH && stA){
+  if (stH && stA) {
     const pctH = pct(stH.r), pctA = pct(stA.r);
-    if(pctH > pctA) p = Math.min(0.95, p + 0.05);
-    else if(pctA > pctH) p = Math.max(0.05, p - 0.05);
+    if (pctH > pctA) p += 0.05;
+    else if (pctA > pctH) p -= 0.05;
+
+    const marginH = (stH.pf - stH.pa) / Math.max(1, stH.r[0] + stH.r[1]);
+    const marginA = (stA.pf - stA.pa) / Math.max(1, stA.r[0] + stA.r[1]);
+    const diffMargin = marginH - marginA;
+    if (diffMargin >= 10) p += 0.04;
+    else if (diffMargin <= -10) p -= 0.04;
+
+    const h2hH = stH.h2h[g.a] || 0;
+    const h2hA = stA.h2h[g.h] || 0;
+    if (h2hH > h2hA) p += 0.05;
+    else if (h2hA > h2hH) p -= 0.05;
   }
-  return p;
+  return Math.max(0.05, Math.min(0.95, p));
 }
-function chances(g){const h=Math.round(strength(g)*100);return {h,a:100-h}}
 function replaceState(target,next){for(const id of Object.keys(target))delete target[id];Object.assign(target,next)}
 function remember(){undo={picks:{...picks},scores:structuredClone(scores),drafts:structuredClone(scoreDrafts),playoffPicks:{...playoffPicks}}}
 function toast(msg,canUndo=false){
